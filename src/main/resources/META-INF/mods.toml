@@ -1,0 +1,19 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+modId="ainpc"
+version="1.0"
+displayName="AI NPC Mod"
+authors="Kirito"
+description='''
+AI NPC system for Minecraft
+'''
+
+[[dependencies.ainpc]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
