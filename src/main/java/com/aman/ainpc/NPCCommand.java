@@ -4,7 +4,6 @@ import com.mojang.brigadier.CommandDispatcher;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.EntityType;
 
 public class NPCCommand {
 
@@ -16,7 +15,7 @@ public class NPCCommand {
                             ServerLevel level = context.getSource().getLevel();
 
                             AINPCEntity npc = new AINPCEntity(
-                                    EntityType.VILLAGER, // temporary base
+                                    AINPC.AI_NPC.get(),
                                     level
                             );
 
