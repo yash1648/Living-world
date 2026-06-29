@@ -1,0 +1,2 @@
+- [ForgeGradle Java 17 toolchain](forge-java17-toolchain.md) — ForgeGradle 6 requires Java 17 for its MCP decompilation step; GraalVM 22.3 (Java 19) alone is not enough.
+- [Forge 47.x config registration](forge-config-api.md) — FMLJavaModLoadingContext.get().registerConfig() is the stable pattern; ModContainer.registerConfig() does not exist in Forge 47.x.

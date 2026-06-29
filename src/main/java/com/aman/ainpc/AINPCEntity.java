@@ -3,8 +3,10 @@ package com.aman.ainpc;
 import com.aman.ainpc.agent.runtime.AgentRuntime;
 import com.aman.ainpc.agent.runtime.AgentRuntimeManager;
 import com.aman.ainpc.agent.runtime.AgentTickResult;
+import com.aman.ainpc.decision.Goal;
 import com.aman.ainpc.perception.Observation;
 import com.aman.ainpc.perception.ObservationType;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
@@ -21,11 +23,11 @@ import java.util.Map;
 
 public class AINPCEntity extends PathfinderMob {
 
-    private static final int SCAN_INTERVAL = 60; // ticks (~3 seconds) between proximity scans
-    private static final double SCAN_RANGE = 16.0;
+    private static final double DEFAULT_SCAN_RANGE = 16.0;
 
     private AgentRuntime agentRuntime;
     private int scanCooldown = 0;
+    private int nameUpdateCooldown = 0;
 
     public AINPCEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
@@ -56,6 +58,13 @@ public class AINPCEntity extends PathfinderMob {
     public void onAddedToWorld() {
         super.onAddedToWorld();
         this.agentRuntime = AgentRuntimeManager.getInstance().register(this.getUUID());
+
+        // Set display name from generated character profile (server-side)
+        if (!this.level().isClientSide() && this.agentRuntime != null) {
+            String name = this.agentRuntime.getCharacterProfile().getName();
+            this.setCustomName(Component.literal(name));
+            this.setCustomNameVisible(true);
+        }
     }
 
     @Override
@@ -73,32 +82,40 @@ public class AINPCEntity extends PathfinderMob {
     public void tick() {
         super.tick();
 
-        // Ensure runtime is registered (defensive — onAddedToWorld should handle it)
+        // Ensure runtime is registered (defensive)
         if (this.agentRuntime == null) {
             this.agentRuntime = AgentRuntimeManager.getInstance().register(this.getUUID());
         }
 
-        // Run agent runtime only on server side
         if (!this.level().isClientSide()) {
-            // Scan surroundings for observations
-            scanSurroundings();
+            // Scan surroundings every N ticks
+            int scanInterval = Config.scanIntervalTicks > 0 ? Config.scanIntervalTicks : 60;
+            if (--scanCooldown <= 0) {
+                scanCooldown = scanInterval;
+                scanSurroundings();
+            }
 
-            // Execute the perception → event pipeline
+            // Execute the perception → event → decision pipeline
             AgentTickResult result = this.agentRuntime.tick();
+
+            // Optionally update nametag with current goal (debug mode)
+            if (--nameUpdateCooldown <= 0) {
+                nameUpdateCooldown = 100; // ~5 seconds
+                updateNameTag();
+            }
         }
     }
 
     // ── Perception ─────────────────────────────────────────────────
 
     private void scanSurroundings() {
-        if (--scanCooldown > 0) return;
-        scanCooldown = SCAN_INTERVAL;
-
         Level level = this.level();
         if (level == null) return;
 
+        double range = Config.scanRange > 0 ? Config.scanRange : DEFAULT_SCAN_RANGE;
+        AABB searchBox = this.getBoundingBox().inflate(range);
+
         // Detect nearby players
-        AABB searchBox = this.getBoundingBox().inflate(SCAN_RANGE);
         List<Player> players = level.getEntitiesOfClass(Player.class, searchBox,
                 p -> p != null && p.isAlive() && !p.isSpectator());
 
@@ -113,5 +130,36 @@ public class AINPCEntity extends PathfinderMob {
             );
             this.agentRuntime.getPerceptionBuffer().add(observation);
         }
+    }
+
+    // ── Nametag ────────────────────────────────────────────────────
+
+    private void updateNameTag() {
+        if (this.agentRuntime == null) return;
+
+        String baseName = this.agentRuntime.getCharacterProfile().getName();
+
+        if (Config.showDebugGoals) {
+            Goal goal = this.agentRuntime.getCurrentGoal();
+            String goalLabel = goal != null ? " §7[" + goal.getType().name() + "]§r" : "";
+            this.setCustomName(Component.literal(baseName + goalLabel));
+        } else {
+            this.setCustomName(Component.literal(baseName));
+        }
+    }
+
+    // ── Public Helpers ─────────────────────────────────────────────
+
+    /** Returns the NPC's generated character name. */
+    public String getCharacterName() {
+        if (agentRuntime != null) {
+            return agentRuntime.getCharacterProfile().getName();
+        }
+        return "NPC";
+    }
+
+    /** Returns the NPC's agent runtime (server-side only). */
+    public AgentRuntime getAgentRuntime() {
+        return agentRuntime;
     }
 }
