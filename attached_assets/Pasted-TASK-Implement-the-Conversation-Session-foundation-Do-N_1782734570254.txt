@@ -1,0 +1,172 @@
+TASK
+
+Implement the Conversation Session foundation.
+
+Do NOT implement dialogue.
+
+Do NOT call the LLM.
+
+Do NOT classify messages.
+
+Do NOT store memories.
+
+Do NOT integrate with Minecraft.
+
+CONTEXT
+
+A ConversationSession represents one active conversation between participants.
+
+It is temporary runtime state.
+
+It is NOT Memory.
+
+It is NOT LifeHistory.
+
+It exists only while entities are actively interacting.
+
+Future features:
+
+- conversation timeout
+- interruption
+- multiplayer
+- NPC-to-NPC conversations
+- context windows
+- LLM message history
+
+will all build on this layer.
+
+REQUIREMENTS
+
+Create package:
+
+com.aman.ainpc.conversation.session
+
+Create exactly these classes:
+
+ConversationSession
+
+ConversationSessionManager
+
+ConversationSessionState
+
+ConversationParticipant
+
+------------------------------------------------
+
+ConversationSessionState
+
+Enum
+
+ACTIVE
+
+PAUSED
+
+ENDED
+
+------------------------------------------------
+
+ConversationParticipant
+
+Immutable.
+
+Contains:
+
+UUID entityId
+
+No additional behavior.
+
+------------------------------------------------
+
+ConversationSession
+
+Immutable identity.
+
+Owns:
+
+UUID sessionId
+
+ConversationSessionState state
+
+List<ConversationParticipant>
+
+Instant startedAt
+
+No message history.
+
+No timeout.
+
+No AI.
+
+No Minecraft.
+
+No networking.
+
+------------------------------------------------
+
+ConversationSessionManager
+
+Owns active sessions.
+
+Supports only:
+
+createSession(...)
+
+endSession(...)
+
+getSession(...)
+
+isActive(...)
+
+No cleanup.
+
+No timeout.
+
+No threading.
+
+No persistence.
+
+No message storage.
+
+No LLM.
+
+------------------------------------------------
+
+IMPORTANT
+
+Do NOT
+
+Store chat history.
+
+Store prompts.
+
+Store memories.
+
+Implement timeout.
+
+Implement networking.
+
+Modify InteractionEngine.
+
+Modify InteractionResolver.
+
+Modify ConversationContext.
+
+Modify Minecraft.
+
+This milestone creates only the runtime session layer.
+
+DEFINITION OF DONE
+
+Project compiles.
+
+Gameplay unchanged.
+
+Exactly four new classes created.
+
+No existing files modified.
+
+Explain:
+
+Why ConversationSession is runtime state while Memory is permanent state.
+
+List every created file.
