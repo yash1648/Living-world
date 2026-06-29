@@ -1,0 +1,140 @@
+TASK
+
+Implement the first vertical slice of the AI NPC architecture.
+
+This milestone is NOT about adding intelligence.
+
+It is about connecting the systems that already exist.
+
+OBJECTIVE
+
+A player message should travel through the new architecture before reaching the existing AI backend.
+
+The existing AI backend should remain unchanged.
+
+The generated reply should remain unchanged.
+
+Gameplay behavior should remain unchanged.
+
+ARCHITECTURE
+
+Current flow (prototype):
+
+Player Chat
+↓
+
+ConversationHandler
+↓
+
+AI Backend
+
+Replace with:
+
+Player Chat
+↓
+
+InteractionRequest
+
+↓
+
+InteractionResolver
+
+↓
+
+ConversationSessionManager
+
+↓
+
+InteractionEngine
+
+↓
+
+ConversationContextBuilder
+
+↓
+
+Existing AI Backend
+
+IMPORTANT
+
+Reuse every existing class wherever possible.
+
+Do NOT duplicate logic.
+
+Do NOT bypass the architecture.
+
+REQUIREMENTS
+
+Modify only the minimum number of files necessary.
+
+Do NOT change the AI networking implementation.
+
+Do NOT change the HTTP client.
+
+Do NOT change JSON.
+
+Do NOT change LLM prompts.
+
+Do NOT implement memory retrieval.
+
+Do NOT implement relationship lookup.
+
+Do NOT implement knowledge lookup.
+
+Do NOT implement planning.
+
+Do NOT implement tasks.
+
+Do NOT implement prompt formatting.
+
+ConversationContextBuilder may still return default values.
+
+InteractionEngine may still always accept.
+
+InteractionResolver may still always return UNKNOWN.
+
+ConversationSessionManager may simply create one session.
+
+That is acceptable.
+
+The goal is architectural integration, not intelligence.
+
+DEFINITION OF DONE
+
+The existing chat feature still works.
+
+The AI response is identical to before.
+
+The request now flows through:
+
+InteractionRequest
+
+↓
+
+InteractionResolver
+
+↓
+
+ConversationSessionManager
+
+↓
+
+InteractionEngine
+
+↓
+
+ConversationContextBuilder
+
+↓
+
+Existing AI Backend
+
+No gameplay regressions.
+
+Document:
+
+Which existing classes were connected.
+
+Which old code path (if any) became obsolete.
+
+Do NOT delete obsolete code yet.
