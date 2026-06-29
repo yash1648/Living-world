@@ -3,6 +3,8 @@ package com.aman.ainpc;
 import com.aman.ainpc.agent.runtime.AgentRuntime;
 import com.aman.ainpc.agent.runtime.AgentRuntimeManager;
 import com.aman.ainpc.agent.runtime.AgentTickResult;
+import com.aman.ainpc.behavior.ActionExecutor;
+import com.aman.ainpc.behavior.GoalDrivenGoal;
 import com.aman.ainpc.decision.Goal;
 import com.aman.ainpc.perception.Observation;
 import com.aman.ainpc.perception.ObservationType;
@@ -26,11 +28,13 @@ public class AINPCEntity extends PathfinderMob {
     private static final double DEFAULT_SCAN_RANGE = 16.0;
 
     private AgentRuntime agentRuntime;
+    private ActionExecutor actionExecutor;
     private int scanCooldown = 0;
     private int nameUpdateCooldown = 0;
 
     public AINPCEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
+        this.actionExecutor = new ActionExecutor();
     }
 
     // ── Attributes ─────────────────────────────────────────────────
@@ -47,9 +51,14 @@ public class AINPCEntity extends PathfinderMob {
 
     @Override
     protected void registerGoals() {
+        // Priority 0 — look around when nothing else is happening
         this.goalSelector.addGoal(0, new RandomLookAroundGoal(this));
-        this.goalSelector.addGoal(1, new RandomStrollGoal(this, 0.8D));
-        this.goalSelector.addGoal(2, new LookAtPlayerGoal(this, Player.class, 8.0F));
+        // Priority 1 — main AI-driven behavior (movement + look)
+        this.goalSelector.addGoal(1, new GoalDrivenGoal(this, actionExecutor));
+        // Priority 2 — vanilla wander as fallback when queue is empty
+        this.goalSelector.addGoal(2, new RandomStrollGoal(this, 0.8D));
+        // Priority 3 — face nearby players when wandering
+        this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 8.0F));
     }
 
     // ── Lifecycle ──────────────────────────────────────────────────
@@ -95,7 +104,7 @@ public class AINPCEntity extends PathfinderMob {
                 scanSurroundings();
             }
 
-            // Execute the perception → event → decision pipeline
+            // Execute the perception → event → decision → plan pipeline
             AgentTickResult result = this.agentRuntime.tick();
 
             // Optionally update nametag with current goal (debug mode)

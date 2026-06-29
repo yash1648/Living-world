@@ -3,58 +3,51 @@
 ## Session Summary
 
 ### What Was Done This Cycle
-**MVP Slice**: B3 — Expand EventType enum (sprint blocker)
+**Phase 3 — Behavior: Full Planner → TaskQueue → ActionExecutor stack**
 
 | File | Action | Description |
 |------|--------|-------------|
-| `EventType.java` | ✅ Rewritten | 1 type → 33 types across 10 categories: interaction, player, world, environment, combat, internal, goal, social |
-| `EventFactory.java` | ✅ Rewritten | Maps ObservationType→EventType via static lookup table. Merges observation metadata into event metadata. |
+| `behavior/task/TaskType.java` | ✅ Created | 9 task types: WALK_TO, EXPLORE, INVESTIGATE, GREET, SOCIALIZE, EAT, SLEEP, WORK, IDLE |
+| `behavior/task/Task.java` | ✅ Created | Immutable task data. Factory methods: `of(type)`, `walkTo(x,y,z)`, `ofWithDuration(type, ticks)` |
+| `behavior/TaskQueue.java` | ✅ Created | Deque-backed ordered queue. `load()`, `peek()`, `poll()`, `clear()` |
+| `behavior/Planner.java` | ✅ Created | Pure Java. Routes GoalType → List<Task>. No Minecraft access. |
+| `behavior/ActionExecutor.java` | ✅ Created | Only Minecraft-touching class. Resolves positions, drives navigation, spawns particles. |
+| `behavior/GoalDrivenGoal.java` | ✅ Created | PathfinderGoal at priority 1. Bridges AgentRuntime.taskQueue ↔ ActionExecutor. |
+| `agent/runtime/AgentRuntime.java` | ✅ Updated | Added Planner, TaskQueue, `lastPlannedGoalType`. Replans when goal type changes or queue empties. |
+| `AINPCEntity.java` | ✅ Updated | Added GoalDrivenGoal (priority 1), ActionExecutor. Kept RandomStrollGoal (priority 2) as fallback. |
 
-### Before vs After
+### Build Status
+```
+BUILD SUCCESSFUL in 25s
+1 deprecation warning (FMLJavaModLoadingContext.get() — pre-existing, not introduced here)
+```
 
-| Aspect | Before | After |
-|--------|--------|-------|
-| Event types | Only `UNKNOWN` | 33 domain-specific types |
-| EventFactory | Always created `UNKNOWN` events | Routes on observation type: PLAYER_SEEN→MET_PLAYER, CHAT_HEARD→CONVERSATION_HAD, etc. |
-| Event metadata | Always `null` | Merged from all source observations + event_observation_count |
-| LifeHistory records | All events show as "UNKNOWN" | Events now carry semantic meaning |
-| Phase 2 readiness | Blocked — no event types to route on | Fully unblocked — Knowledge, Needs, Relationships can filter by EventType |
-
-### Codebase Health Assessment
-
-| Metric | Count | Notes |
-|--------|-------|-------|
-| Total Java files | 28 | 937 lines across 10 packages |
-| Phase 1 (Foundation) | 16 files | Fully built and connected |
-| Phase 2 (Mind) ready files | 2 files | LifeHistory, RelationshipManager (need enhancement) |
-| Needs realignment | 2 files | ChatListener (wrong LLM direction), Config (placeholders) |
-| Tests | 0 | Zero coverage |
-| Build status | ✅ PASS | Clean compile, clean jar |
-
-### Sprint Blocker Status
-
-| Blocker | Status | File | Issue |
-|---------|--------|------|-------|
-| **B1** | TODO | `ChatListener.java` | Uses `Minecraft.getInstance()` — blocks dedicated server |
-| **B2** | TODO | `ChatListener.java` | LLM controls NPC emotions — vision says LLM generates dialogue only |
-| **B3** | ✅ DONE | `EventType.java` | Expanded to 33 types. Factory maps ObservationType→EventType |
+### End-to-End Tick Flow (Phase 3 complete)
+```
+AINPCEntity.tick()
+→ scanSurroundings() → PerceptionBuffer
+→ AgentRuntime.tick()
+   → NeedsManager.tick()
+   → Perception pipeline → EventDispatcher → all subsystems
+   → DecisionEngine.decide() → Goal
+   → if goal changed or queue empty: taskQueue.load(planner.plan(goal))
+→ GoalDrivenGoal.tick() [via Minecraft goal selector]
+   → ActionExecutor.tick(entity, taskQueue)
+   → head task executed: navigate, look, idle, etc.
+   → task completes → next task starts automatically
+```
 
 ### Project Context
-- **Root**: `/home/grim/Projects/Livingworld-`
 - **Package**: `com.aman.ainpc`
 - **Mod ID**: `ainpc`
 - **Minecraft**: 1.20.1 / Forge 47.4.10
-- **Java**: 17 (builds with JDK 21)
+- **Java**: 17 (JDK at `/nix/store/xad649j61kwkh0id5wvyiab5rliprp4d-openjdk-17.0.15+6/lib/openjdk`)
 - **Build**: `./gradlew build`
 
 ### Next Action
-**2.1 — Build Knowledge system** (first Phase 2 subsystem):
-- EventConsumer that extracts facts from typed events
-- Fact format: {subject, predicate, object, confidence, timestamp}
-- Routes on EventType: MET_PLAYER, ITEM_OBSERVED, BLOCK_CHANGED, etc.
-- No remaining blockers — EventType enum is expanded and ready
-
-### Quick Commands
-- `./gradlew build` — Build the mod
-- `./gradlew genIntellijRuns` — Generate IDE run configs
-- Git branch: `main`
+**4.1 — Build Conversation Context formatter:**
+- Class: `conversation/ConversationContext.java`
+- Method: `String buildSystemPrompt(AgentRuntime runtime, UUID playerUUID)`
+- Reads: CharacterProfile (name, personality, occupation), NeedsManager (current needs), KnowledgeBase (facts), RelationshipManager (player relationship), LifeHistory.buildNarrativeSummary()
+- Output: structured String that ConversationHandler passes to the AI call as the system prompt
+- No LLM call here — just the formatter. ConversationHandler already makes the call.

@@ -3,8 +3,8 @@
 ## Project Status
 ```
 Product:  Living World Engine (LWE) for Minecraft 1.20.1
-Phase:    2 — Mind (COMPLETE) → 3 — Behavior (Next)
-Complete: ████████████░░░░░░░░░░ 55% (est.)
+Phase:    3 — Behavior (COMPLETE) → 4 — Conversation (Next)
+Complete: ████████████████░░░░░░ 70% (est.)
 ```
 
 ## Phase Overview
@@ -13,8 +13,8 @@ Complete: ████████████░░░░░░░░░░ 55%
 |-------|------|--------|---|
 | 1 | Foundation | ✅ BUILT | 100% |
 | 2 | Mind | ✅ BUILT | 100% |
-| 3 | Behavior | 🔜 NEXT | 0% |
-| 4 | Conversation | 📋 Planned | 0% |
+| 3 | Behavior | ✅ BUILT | 100% |
+| 4 | Conversation | 🔜 NEXT | 0% |
 | 5 | Society | 📋 Planned | 0% |
 | 6 | Civilization | 📋 Planned | 0% |
 
@@ -37,16 +37,6 @@ Complete: ████████████░░░░░░░░░░ 55%
 
 ## Phase 2 ✅ — Mind (COMPLETE)
 
-### Sprint Blockers — Fixed
-
-| # | Task | Status | Notes |
-|---|------|--------|-------|
-| B1 | Fix ChatListener client-side API | ✅ DONE | Moved to ConversationHandler (ServerChatEvent server-side) |
-| B2 | Realign LLM integration direction | ✅ DONE | LLM generates dialogue only; Needs system drives particles/emotions |
-| B3 | Expand EventType enum | ✅ DONE (Phase 1) | 33 types, EventFactory maps ObservationType→EventType |
-
-### Phase 2 Subsystems — Built
-
 | # | Task | Status | Files |
 |---|------|--------|-------|
 | 2.1 | Knowledge System | ✅ DONE | Fact, FactExtractor, KnowledgeBase |
@@ -59,72 +49,59 @@ Complete: ████████████░░░░░░░░░░ 55%
 | 2.8 | Character Profile | ✅ DONE | CharacterProfile (deterministic generation from UUID) |
 | 2.9 | Dreams System | ✅ DONE | DreamType, Dream (progress tracking) |
 
-### Bonus — Architecture Fixes
+---
 
-| # | Fix | Status | Notes |
-|---|-----|--------|-------|
-| F1 | NPCInteractionHandler | ✅ DONE | Now checks `AINPCEntity` (not hardcoded name "AI_NPC") |
-| F2 | ConversationManager | ✅ DONE | Server-side singleton, ConcurrentHashMap, toggle on/off |
-| F3 | ConversationHandler | ✅ DONE | ServerChatEvent interceptor, AI call on background thread |
-| F4 | Config.java | ✅ DONE | AI endpoint, scan interval, scan range, debug goals flag |
-| F5 | AINPCEntity display name | ✅ DONE | Name set from CharacterProfile on spawn |
-| F6 | Need-driven particle emotions | ✅ DONE | Safety→angry, loneliness satisfied→heart, hunger→splash |
-| F7 | Occupation personality trait | ✅ DONE | CharacterProfile includes occupation, personality, dream |
+## Phase 3 ✅ — Behavior (COMPLETE)
 
-**End-to-end flow:**
+**Full Planner → TaskQueue → ActionExecutor → GoalDrivenGoal stack built.**
+
+| # | Task | Status | Files |
+|---|------|--------|-------|
+| 3.1 | **Planner** | ✅ DONE | `behavior/Planner.java` — Goal→List<Task>, pure Java |
+| 3.2 | **Task definitions** | ✅ DONE | `behavior/task/TaskType.java`, `behavior/task/Task.java` |
+| 3.3 | **Task Queue** | ✅ DONE | `behavior/TaskQueue.java` — ordered queue, loaded by Planner |
+| 3.4 | **Action Executor** | ✅ DONE | `behavior/ActionExecutor.java` — only system touching Minecraft |
+| 3.5 | **Action primitives** | ✅ DONE | Walk, Explore, Investigate, Greet, Socialize, Eat, Sleep, Work, Idle |
+| 3.6 | **Goal-driven AI goal** | ✅ DONE | `behavior/GoalDrivenGoal.java` — PathfinderGoal at priority 1 |
+
+### Architecture
+
 ```
-Player right-clicks AINPCEntity
-→ NPCInteractionHandler starts conversation in ConversationManager
-→ Player types in chat
-→ ConversationHandler (ServerChatEvent) intercepts
-→ Calls AI on background thread with character system prompt + needs + knowledge
-→ AI returns dialogue only
-→ NeedsManager determines particle effect (not LLM keyword parsing)
-→ Response sent to player via sendSystemMessage
+AgentRuntime.tick()
+→ DecisionEngine.decide() → Goal
+→ if goal changed or queue empty: taskQueue.load(planner.plan(goal))
+
+AINPCEntity.registerGoals()
+→ Priority 0: RandomLookAroundGoal     (fallback look)
+→ Priority 1: GoalDrivenGoal           ← NEW (reads taskQueue, drives ActionExecutor)
+→ Priority 2: RandomStrollGoal         (fallback wander when queue empty)
+→ Priority 3: LookAtPlayerGoal         (fallback look at players)
+
+GoalDrivenGoal.tick()
+→ ActionExecutor.tick(entity, taskQueue)
+→ executes head task: WALK_TO, EXPLORE, INVESTIGATE, GREET, SOCIALIZE, EAT, SLEEP, WORK, IDLE
+→ resolves positions from world state at task start
+→ completes when nav.isDone() or maxDurationTicks elapsed
 ```
 
-**Agent tick flow:**
-```
-AINPCEntity.tick()
-→ AgentRuntime.tick()
-→ NeedsManager.tick() (time-based decay)
-→ PerceptionBuffer.drain() → PerceptionSnapshot
-→ SignificanceEvaluator (novelty-weighted scoring, threshold=0.35)
-→ ContextCorrelator (group by type+target UUID)
-→ EventFactory (ObservationType→EventType mapping)
-→ EventDispatcher dispatches to:
-   LifeHistory (append), RelationshipManager (score updates),
-   KnowledgeBase (fact extraction), NeedsManager (event-based updates)
-→ DecisionEngine.decide() → current Goal
-```
+### Task → Goal mapping
+
+| GoalType | Task Sequence |
+|----------|---------------|
+| FIND_FOOD | EXPLORE → EAT |
+| SEEK_SAFETY | EXPLORE |
+| REST | SLEEP |
+| SOCIALIZE | SOCIALIZE |
+| GREET_PLAYER | GREET |
+| EXPLORE | EXPLORE |
+| INVESTIGATE | INVESTIGATE |
+| PURSUE_DREAM | EXPLORE → WORK |
+| DO_WORK | WORK |
+| IDLE | IDLE |
 
 ---
 
-## Phase 3 📋 — Behavior (NEXT SPRINT)
-
-### Sprint Goal
-Build the **Planner → Task Queue → Action Executor** stack.
-The Decision Engine already outputs Goals — Phase 3 decomposes them into executable Tasks.
-
-| # | Task | Description | Priority | Depends On |
-|---|------|-------------|----------|------------|
-| 3.1 | **Planner** | Takes a Goal from DecisionEngine, decomposes into sequential Tasks. No Minecraft API access. | 🔴 HIGH | 2.7 ✅ |
-| 3.2 | **Task definitions** | Walk, Mine, Talk, Eat, Sleep, Harvest, Craft, Attack, Trade. Immutable task data. | 🔴 HIGH | 3.1 |
-| 3.3 | **Task Queue** | Ordered queue of tasks per NPC. Processed each tick. Cancellable. | 🔴 HIGH | 3.2 |
-| 3.4 | **Action Executor** | ONLY system that touches Minecraft. Converts Tasks to Minecraft actions. | 🔴 HIGH | 3.3 |
-| 3.5 | **Action primitives** | MoveTo, BreakBlock, PlaceBlock, AttackEntity, UseItem, etc. | 🟡 MED | 3.4 |
-| 3.6 | **Goal-driven AI goals** | Replace generic PathfinderMob goals with ones driven by the current Goal. | 🟡 MED | 3.1 |
-
-### Next Action
-**3.1 — Build Planner** (first Phase 3 component):
-- Takes a `Goal` from `DecisionEngine`
-- Routes on `GoalType` to select a task sequence
-- Returns a `List<Task>` without touching Minecraft
-- Example: `FIND_FOOD → [Walk(nearest_food_source), Harvest(food), Eat(food)]`
-
----
-
-## Phase 4 📋 — Conversation (Future)
+## Phase 4 📋 — Conversation (NEXT SPRINT)
 
 | # | Task | Description |
 |---|------|-------------|
@@ -132,6 +109,12 @@ The Decision Engine already outputs Goals — Phase 3 decomposes them into execu
 | 4.2 | **Memory-aware dialogue** | LLM references past events from LifeHistory.buildNarrativeSummary(). |
 | 4.3 | **Persona system** | CharacterProfile shapes dialogue tone. |
 | 4.4 | **Conversation history** | Per-conversation message history for multi-turn dialogue. |
+
+### Next Action
+**4.1 — Build Conversation Context formatter:**
+- Reads `AgentRuntime` state: NeedsManager, KnowledgeBase, RelationshipManager, LifeHistory, CharacterProfile
+- Builds a structured system prompt string for the LLM
+- No direct LLM call here — just the context formatter that ConversationHandler uses
 
 ---
 
