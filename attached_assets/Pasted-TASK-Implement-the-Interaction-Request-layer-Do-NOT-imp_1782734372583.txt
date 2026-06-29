@@ -1,0 +1,166 @@
+TASK
+
+Implement the Interaction Request layer.
+
+Do NOT implement chat parsing.
+
+Do NOT classify messages.
+
+Do NOT use keywords.
+
+Do NOT call the LLM.
+
+CONTEXT
+
+Every interaction in the game should begin as an InteractionRequest.
+
+An InteractionRequest is a raw interaction produced by Minecraft or another game system.
+
+Examples:
+
+- Player sent chat
+- Player right-clicked NPC
+- Player attacked NPC
+- Player offered trade
+- Another NPC started a conversation
+- Settlement issued an order
+
+The InteractionRequest is intentionally raw.
+
+It contains only what happened.
+
+Later, an InteractionResolver will translate it into an InteractionContext.
+
+REQUIREMENTS
+
+Create package:
+
+com.aman.ainpc.interaction.request
+
+Create exactly these classes:
+
+InteractionRequest
+
+InteractionSource
+
+InteractionResolver
+
+----------------------------------
+
+InteractionSource
+
+Enum only.
+
+Include:
+
+PLAYER_CHAT
+
+PLAYER_INTERACT
+
+PLAYER_ATTACK
+
+NPC_INTERACTION
+
+SETTLEMENT
+
+SYSTEM
+
+UNKNOWN
+
+----------------------------------
+
+InteractionRequest
+
+Immutable.
+
+Contains:
+
+source
+
+initiator UUID
+
+target UUID
+
+payload (String)
+
+timestamp
+
+No parsing.
+
+No Minecraft logic.
+
+No networking.
+
+----------------------------------
+
+InteractionResolver
+
+Single responsibility:
+
+Convert an InteractionRequest into an InteractionContext.
+
+For now:
+
+Always return an InteractionContext with:
+
+InteractionType.UNKNOWN
+
+The same UUIDs
+
+The same payload
+
+The same timestamp
+
+No keyword detection.
+
+No intent recognition.
+
+No LLM.
+
+No rules.
+
+No AI.
+
+----------------------------------
+
+IMPORTANT
+
+Do NOT
+
+Implement message classification.
+
+Implement regex.
+
+Use keywords.
+
+Call the LLM.
+
+Read memories.
+
+Read relationships.
+
+Read goals.
+
+Modify InteractionEngine.
+
+Modify Conversation.
+
+Modify Minecraft.
+
+This milestone establishes the bridge between external events and the internal interaction system.
+
+DEFINITION OF DONE
+
+Project compiles.
+
+Gameplay unchanged.
+
+Exactly three new classes created.
+
+No gameplay code modified.
+
+Explain:
+
+Why InteractionRequest exists separately from InteractionContext.
+
+List every created file.
