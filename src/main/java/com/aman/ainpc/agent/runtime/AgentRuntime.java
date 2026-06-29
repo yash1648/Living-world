@@ -1,5 +1,6 @@
 package com.aman.ainpc.agent.runtime;
 
+import com.aman.ainpc.agent.snapshot.AgentSnapshot;
 import com.aman.ainpc.behavior.Planner;
 import com.aman.ainpc.behavior.TaskQueue;
 import com.aman.ainpc.character.CharacterProfile;
@@ -148,4 +149,20 @@ public class AgentRuntime {
     public CharacterProfile getCharacterProfile()       { return characterProfile; }
     public Goal getCurrentGoal()                        { return currentGoal; }
     public TaskQueue getTaskQueue()                     { return taskQueue; }
+
+    /**
+     * Produce an immutable read-only snapshot of this runtime's visible state.
+     *
+     * Callers (e.g. ConversationContextBuilder) should read from the snapshot
+     * rather than holding a live reference to the runtime.
+     */
+    public AgentSnapshot createSnapshot() {
+        return new AgentSnapshot(
+                state.getAgentUUID(),
+                characterProfile.getName(),
+                characterProfile.toSystemPrompt(),
+                needsManager.summarize(),
+                knowledgeBase.summarize(8)
+        );
+    }
 }

@@ -108,9 +108,10 @@ public class ConversationHandler {
             return;
         }
 
-        // ── 5. Build NPC context from AgentRuntime ────────────────
+        // ── 5. Snapshot NPC state, then build conversation context ─
         AgentRuntime runtime = AgentRuntimeManager.getInstance().getRuntime(npcUUID.get());
-        ConversationContextBuilder.Result built = CONTEXT_BUILDER.build(runtime);
+        ConversationContextBuilder.Result built = CONTEXT_BUILDER.build(
+                runtime != null ? runtime.createSnapshot() : null);
 
         // Tell player NPC is thinking
         player.sendSystemMessage(Component.literal("§7[" + built.npcName + " is thinking...]§r"));

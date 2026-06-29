@@ -1,22 +1,20 @@
 package com.aman.ainpc.conversation;
 
-import com.aman.ainpc.agent.runtime.AgentRuntime;
+import com.aman.ainpc.agent.snapshot.AgentSnapshot;
 
 /**
  * Assembles the context fields needed to call the AI backend for a conversation.
  *
- * Extracts data from the NPC's AgentRuntime (character profile, needs, knowledge)
- * and returns them as an immutable Result. Returns safe defaults when no runtime
- * is available.
+ * Accepts an immutable AgentSnapshot — never reads AgentRuntime directly.
+ * Returns safe defaults when no snapshot is available.
  *
- * Currently returns the same values the old ConversationHandler built inline.
  * Future: enrich with LifeHistory narrative summary, relationship scores, and
- * active goal — all read from the AgentRuntime without touching Minecraft.
+ * active goal by adding those fields to AgentSnapshot and reading them here.
  */
 public class ConversationContextBuilder {
 
     /**
-     * Immutable snapshot of everything the AI backend needs for one exchange.
+     * Immutable result containing everything the AI backend needs for one exchange.
      */
     public static final class Result {
         public final String systemPrompt;
@@ -34,23 +32,23 @@ public class ConversationContextBuilder {
     }
 
     /**
-     * Build the AI context from the NPC's runtime state.
+     * Build the AI context from an immutable NPC snapshot.
      *
-     * @param runtime the NPC's AgentRuntime, or null if unavailable
-     * @return a fully-populated Result (falls back to safe defaults if runtime is null)
+     * @param snapshot the NPC's AgentSnapshot, or null if unavailable
+     * @return a fully-populated Result (falls back to safe defaults if snapshot is null)
      */
-    public Result build(AgentRuntime runtime) {
-        String systemPrompt = runtime != null
-                ? runtime.getCharacterProfile().toSystemPrompt()
+    public Result build(AgentSnapshot snapshot) {
+        String systemPrompt = snapshot != null
+                ? snapshot.getSystemPrompt()
                 : "You are an NPC villager. Respond naturally in character.";
-        String npcName = runtime != null
-                ? runtime.getCharacterProfile().getName()
+        String npcName = snapshot != null
+                ? snapshot.getNpcName()
                 : "NPC";
-        String needsSummary = runtime != null
-                ? runtime.getNeedsManager().summarize()
+        String needsSummary = snapshot != null
+                ? snapshot.getNeedsSummary()
                 : "";
-        String knowledgeSummary = runtime != null
-                ? runtime.getKnowledgeBase().summarize(8)
+        String knowledgeSummary = snapshot != null
+                ? snapshot.getKnowledgeSummary()
                 : "";
 
         return new Result(systemPrompt, npcName, needsSummary, knowledgeSummary);
