@@ -1,6 +1,7 @@
 package com.aman.ainpc;
 
 import com.aman.ainpc.client.AINPCClient;
+import com.aman.ainpc.command.NpcMemoryCommand;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraftforge.common.MinecraftForge;
@@ -51,6 +52,7 @@ public class AINPC {
 
     private void onRegisterCommands(RegisterCommandsEvent event) {
         NPCCommand.register(event.getDispatcher());
+        NpcMemoryCommand.register(event.getDispatcher());
     }
 
     private void onEntityAttributeCreation(EntityAttributeCreationEvent event) {
