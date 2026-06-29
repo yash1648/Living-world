@@ -1,0 +1,181 @@
+TASK
+
+Implement the foundation of the Interaction Engine.
+
+Do NOT generate dialogue.
+
+Do NOT call the LLM.
+
+Do NOT build prompt formatting.
+
+This milestone introduces the system responsible for handling every interaction between an NPC and another entity.
+
+CONTEXT
+
+Conversation is only one type of interaction.
+
+Future interactions include:
+
+- Greeting
+- Trading
+- Commands
+- Questions
+- Requests
+- Gifts
+- Threats
+- Recruitment
+- Settlement management
+
+All of these should pass through a single Interaction Engine.
+
+The LLM should never receive raw player input directly.
+
+The Interaction Engine decides how the NPC will react before any dialogue is generated.
+
+REQUIREMENTS
+
+Create package:
+
+com.aman.ainpc.interaction
+
+Create exactly these classes:
+
+InteractionEngine
+
+InteractionContext
+
+InteractionType
+
+InteractionDecision
+
+------------------------------------------------
+
+InteractionType
+
+Enum only.
+
+Include:
+
+GREETING
+
+QUESTION
+
+REQUEST
+
+COMMAND
+
+TRADE
+
+FAREWELL
+
+UNKNOWN
+
+------------------------------------------------
+
+InteractionContext
+
+Immutable.
+
+Contains:
+
+interactionType
+
+initiator UUID
+
+target UUID
+
+raw player message
+
+timestamp
+
+No parsing.
+
+No networking.
+
+No Minecraft code.
+
+------------------------------------------------
+
+InteractionDecision
+
+Immutable.
+
+Contains:
+
+accepted (boolean)
+
+reason (String)
+
+No gameplay logic.
+
+No dialogue.
+
+------------------------------------------------
+
+InteractionEngine
+
+Single responsibility:
+
+Given an InteractionContext,
+
+return an InteractionDecision.
+
+For now:
+
+Always accept every interaction.
+
+Reason = "Accepted"
+
+No AI.
+
+No planner.
+
+No memory lookup.
+
+No relationship lookup.
+
+No task interruption.
+
+No prompt generation.
+
+------------------------------------------------
+
+IMPORTANT
+
+Do NOT
+
+Generate dialogue.
+
+Call the AI.
+
+Read memories.
+
+Read relationships.
+
+Read goals.
+
+Read needs.
+
+Modify Minecraft.
+
+Implement networking.
+
+Implement command execution.
+
+Implement trading.
+
+This milestone only establishes the interaction layer.
+
+DEFINITION OF DONE
+
+Project builds.
+
+Gameplay unchanged.
+
+Exactly four new classes created.
+
+No existing gameplay behavior modified.
+
+Explain:
+
+Why InteractionEngine exists separately from Conversation.
