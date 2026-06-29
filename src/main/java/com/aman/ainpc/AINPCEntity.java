@@ -8,6 +8,7 @@ import com.aman.ainpc.behavior.GoalDrivenGoal;
 import com.aman.ainpc.decision.Goal;
 import com.aman.ainpc.perception.Observation;
 import com.aman.ainpc.perception.ObservationType;
+import com.aman.ainpc.perception.PlayerSightTracker;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
@@ -20,8 +21,11 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * The Minecraft entity representing an AI NPC.
@@ -29,19 +33,27 @@ import java.util.Map;
  * Runtime ownership:
  *   Each AINPCEntity permanently owns exactly one AgentRuntime — its brain.
  *   The runtime is created once in onAddedToWorld() (where the entity UUID is
- *   guaranteed stable) and is never nulled out or recreated. Removing the entity
- *   from the world does not destroy the runtime; re-adding it (chunk unload/reload,
- *   dimension change) reuses the same runtime via the null-guard.
- *   AgentRuntimeManager is still notified on add/remove for backward compatibility.
+ *   guaranteed stable) and is never nulled out or recreated.
+ *
+ * Perception:
+ *   Every server tick this entity scans nearby players (within scanRange blocks).
+ *   A PlayerSightTracker enforces a per-player 2-second cooldown so the buffer
+ *   receives at most one PLAYER_SEEN observation per player per 2 seconds.
+ *   Observations enter the PerceptionBuffer and are consumed by AgentRuntime.tick()
+ *   exactly as before — no pipeline changes required.
  */
 public class AINPCEntity extends PathfinderMob {
 
-    private static final double DEFAULT_SCAN_RANGE = 16.0;
+    /** Default sight radius when the config value is zero or not yet loaded. */
+    private static final double DEFAULT_SCAN_RANGE = 10.0;
 
-    /** The NPC's brain. Created once; never null after onAddedToWorld(). */
+    /** The NPC's brain. Created once; non-null after onAddedToWorld(). */
     private AgentRuntime agentRuntime;
+
+    /** Throttles PLAYER_SEEN observations to at most one per player per 2 s. */
+    private final PlayerSightTracker sightTracker = new PlayerSightTracker();
+
     private final ActionExecutor actionExecutor = new ActionExecutor();
-    private int scanCooldown    = 0;
     private int nameUpdateCooldown = 0;
 
     public AINPCEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -82,11 +94,9 @@ public class AINPCEntity extends PathfinderMob {
             agentRuntime = new AgentRuntime(this.getUUID());
         }
 
-        // Also register with AgentRuntimeManager for backward compatibility
-        // (other systems that still do UUID-based lookup).
+        // Also register with AgentRuntimeManager for backward compatibility.
         AgentRuntimeManager.getInstance().register(this.getUUID());
 
-        // Set display name from generated character profile (server-side only)
         if (!this.level().isClientSide()) {
             String name = agentRuntime.getCharacterProfile().getName();
             this.setCustomName(Component.literal(name));
@@ -98,7 +108,6 @@ public class AINPCEntity extends PathfinderMob {
     public void onRemovedFromWorld() {
         super.onRemovedFromWorld();
         // Do NOT null agentRuntime — the entity permanently owns it.
-        // Unregister from the manager so UUID lookups no longer resolve here.
         AgentRuntimeManager.getInstance().unregister(this.getUUID());
     }
 
@@ -108,21 +117,16 @@ public class AINPCEntity extends PathfinderMob {
     public void tick() {
         super.tick();
 
-        // agentRuntime is guaranteed non-null after onAddedToWorld().
-        // No defensive re-creation needed here.
         if (agentRuntime == null || this.level().isClientSide()) return;
 
-        // Scan surroundings every N ticks
-        int scanInterval = Config.scanIntervalTicks > 0 ? Config.scanIntervalTicks : 60;
-        if (--scanCooldown <= 0) {
-            scanCooldown = scanInterval;
-            scanSurroundings();
-        }
+        // Scan for nearby players every tick.
+        // PlayerSightTracker ensures observations are emitted at most once per
+        // 2 seconds per player, so no duplicate spam enters the buffer.
+        scanSurroundings();
 
-        // Execute the perception → event → decision → plan pipeline
+        // Execute the perception → event → decision → plan pipeline.
         AgentTickResult result = agentRuntime.tick();
 
-        // Optionally update nametag with current goal (debug mode)
         if (--nameUpdateCooldown <= 0) {
             nameUpdateCooldown = 100;
             updateNameTag();
@@ -131,6 +135,15 @@ public class AINPCEntity extends PathfinderMob {
 
     // ── Perception ─────────────────────────────────────────────────
 
+    /**
+     * Detects players within scanRange and pushes a PLAYER_SEEN observation
+     * into the NPC's PerceptionBuffer for each one — subject to a 2-second
+     * per-player cooldown enforced by PlayerSightTracker.
+     *
+     * Called every server tick.  The AABB query is cheap for typical player
+     * counts.  Observations enter only the PerceptionBuffer; the runtime
+     * consumes them via its existing pipeline without any changes here.
+     */
     private void scanSurroundings() {
         Level level = this.level();
         if (level == null) return;
@@ -141,16 +154,27 @@ public class AINPCEntity extends PathfinderMob {
         List<Player> players = level.getEntitiesOfClass(Player.class, searchBox,
                 p -> p != null && p.isAlive() && !p.isSpectator());
 
+        // Collect present UUIDs for pruning stale tracker entries
+        Set<UUID> presentUUIDs = new HashSet<>();
+
         for (Player player : players) {
-            agentRuntime.getPerceptionBuffer().add(new Observation(
-                    System.currentTimeMillis(),
-                    ObservationType.PLAYER_SEEN,
-                    this.getUUID(),
-                    player.getUUID(),
-                    new Observation.Position(player.getX(), player.getY(), player.getZ()),
-                    Map.of("name", player.getName().getString())
-            ));
+            UUID playerUUID = player.getUUID();
+            presentUUIDs.add(playerUUID);
+
+            if (sightTracker.shouldObserve(playerUUID)) {
+                agentRuntime.getPerceptionBuffer().add(new Observation(
+                        System.currentTimeMillis(),
+                        ObservationType.PLAYER_SEEN,
+                        this.getUUID(),
+                        playerUUID,
+                        new Observation.Position(player.getX(), player.getY(), player.getZ()),
+                        Map.of("name", player.getName().getString())
+                ));
+            }
         }
+
+        // Remove players no longer in range so the tracker map stays bounded
+        sightTracker.retainOnly(presentUUIDs);
     }
 
     // ── Nametag ────────────────────────────────────────────────────

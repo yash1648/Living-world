@@ -33,7 +33,7 @@ public class Config {
 
     public static final ForgeConfigSpec.DoubleValue SCAN_RANGE = BUILDER
             .comment("Radius (in blocks) of the NPC's perception scan.")
-            .defineInRange("scanRange", 16.0, 4.0, 64.0);
+            .defineInRange("scanRange", 10.0, 4.0, 64.0);
 
     public static final ForgeConfigSpec.BooleanValue SHOW_DEBUG_GOALS = BUILDER
             .comment("If true, the NPC's current goal is shown above its head as a nametag suffix.")
