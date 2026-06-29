@@ -1,6 +1,6 @@
 package com.aman.ainpc.conversation.coordinator;
 
-import com.aman.ainpc.agent.runtime.AgentRuntime;
+import com.aman.ainpc.AINPCEntity;
 import com.aman.ainpc.conversation.ConversationContextBuilder;
 import com.aman.ainpc.conversation.session.ConversationParticipant;
 import com.aman.ainpc.conversation.session.ConversationSession;
@@ -24,36 +24,26 @@ import java.util.function.Consumer;
 /**
  * Owns the complete NPC conversation pipeline.
  *
- * Responsibilities moved here from ConversationHandler:
- *   - All architecture layer singletons (resolver, session manager, engine, builder)
- *   - Session lifecycle (create on entry, close after reply)
- *   - AgentSnapshot creation
- *   - ConversationContext assembly
- *   - Background thread management for the AI call
- *   - The AI HTTP call itself (networking, JSON, response parsing)
- *
- * ConversationHandler is left as Minecraft glue only:
- * Forge event subscription, InteractionRequest construction, calling this class,
- * and sending the returned reply to the player.
+ * Receives the NPC entity directly and obtains its AgentRuntime through
+ * {@code npc.getAgentRuntime()} — the entity is the authoritative owner of its
+ * own brain. No UUID-based lookup via AgentRuntimeManager happens here.
  *
  * Pipeline:
  *   InteractionRequest
- *   ↓ InteractionResolver       (raw → typed context)
- *   ↓ ConversationSessionManager (open session)
- *   ↓ InteractionEngine         (accept / reject)
- *   ↓ AgentRuntime.createSnapshot()
- *   ↓ ConversationContextBuilder (assemble AI context)
- *   ↓ callAI()                  (HTTP — unchanged)
- *   ↓ ConversationSessionManager (close session)
- *   ↓ onComplete callback       (back on server thread)
+ *   ↓ InteractionResolver         (raw → typed context)
+ *   ↓ ConversationSessionManager  (open session)
+ *   ↓ InteractionEngine           (accept / reject)
+ *   ↓ npc.getAgentRuntime().createSnapshot()
+ *   ↓ ConversationContextBuilder  (assemble AI context)
+ *   ↓ callAI()                    (HTTP — unchanged)
+ *   ↓ ConversationSessionManager  (close session)
+ *   ↓ onComplete callback         (back on server thread)
  */
 public class ConversationCoordinator {
 
     private static final String AI_ENDPOINT = "http://127.0.0.1:5000/chat";
 
-    /**
-     * Immutable result returned to ConversationHandler after the AI replies.
-     */
+    /** Immutable result returned to ConversationHandler after the AI replies. */
     public static final class ConversationResult {
         public final String npcName;
         public final String reply;
@@ -66,10 +56,10 @@ public class ConversationCoordinator {
 
     // ── Pipeline singletons ───────────────────────────────────────
 
-    private final InteractionResolver        resolver        = new InteractionResolver();
-    private final ConversationSessionManager sessionManager  = new ConversationSessionManager();
-    private final InteractionEngine          engine          = new InteractionEngine();
-    private final ConversationContextBuilder contextBuilder  = new ConversationContextBuilder();
+    private final InteractionResolver        resolver       = new InteractionResolver();
+    private final ConversationSessionManager sessionManager = new ConversationSessionManager();
+    private final InteractionEngine          engine         = new InteractionEngine();
+    private final ConversationContextBuilder contextBuilder = new ConversationContextBuilder();
 
     // ── Public entry point ────────────────────────────────────────
 
@@ -81,14 +71,14 @@ public class ConversationCoordinator {
      * {@code onComplete} is scheduled back onto the server thread via
      * {@code server.execute()} so Minecraft state can be safely accessed.
      *
-     * @param request      the raw interaction created by ConversationHandler
-     * @param runtime      the NPC's live runtime (may be null)
-     * @param server       the Minecraft server (used to schedule the reply callback)
-     * @param onThinking   called immediately (server thread) with the NPC name
-     * @param onComplete   called after the AI replies (server thread) with the result
+     * @param request     the raw interaction created by ConversationHandler
+     * @param npc         the NPC entity that owns the runtime (may be null)
+     * @param server      the Minecraft server (used to schedule the reply callback)
+     * @param onThinking  called immediately (server thread) with the NPC name
+     * @param onComplete  called after the AI replies (server thread) with the result
      */
     public void handle(InteractionRequest request,
-                       AgentRuntime runtime,
+                       AINPCEntity npc,
                        MinecraftServer server,
                        Consumer<String> onThinking,
                        Consumer<ConversationResult> onComplete) {
@@ -112,10 +102,10 @@ public class ConversationCoordinator {
             return;
         }
 
-        // ── 4. Snapshot NPC state ─────────────────────────────────
-        // ── 5. Build conversation context ─────────────────────────
+        // ── 4. Obtain runtime through the entity (entity owns its brain)
+        // ── 5. Snapshot NPC state → build conversation context ────
         ConversationContextBuilder.Result built = contextBuilder.build(
-                runtime != null ? runtime.createSnapshot() : null);
+                npc != null ? npc.getAgentRuntime().createSnapshot() : null);
 
         // Notify caller that the NPC is "thinking" before going async
         onThinking.accept(built.npcName);
@@ -142,7 +132,7 @@ public class ConversationCoordinator {
         aiThread.start();
     }
 
-    // ── AI call (unchanged from ConversationHandler) ──────────────
+    // ── AI call (unchanged) ───────────────────────────────────────
 
     private static String callAI(String endpoint, String systemPrompt, String playerMessage,
                                   String needsSummary, String knowledgeSummary) {

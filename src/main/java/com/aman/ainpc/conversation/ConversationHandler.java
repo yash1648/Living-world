@@ -3,7 +3,6 @@ package com.aman.ainpc.conversation;
 import com.aman.ainpc.AINPC;
 import com.aman.ainpc.AINPCEntity;
 import com.aman.ainpc.agent.runtime.AgentRuntime;
-import com.aman.ainpc.agent.runtime.AgentRuntimeManager;
 import com.aman.ainpc.conversation.coordinator.ConversationCoordinator;
 import com.aman.ainpc.interaction.request.InteractionRequest;
 import com.aman.ainpc.interaction.request.InteractionSource;
@@ -23,16 +22,16 @@ import java.util.UUID;
 /**
  * Minecraft glue for NPC conversations.
  *
- * Responsibilities retained here (Minecraft-specific only):
- *   - Forge event subscription (@SubscribeEvent)
- *   - Checking if the player is in an active conversation
+ * Responsibilities (Minecraft-specific only):
+ *   - Forge event subscription
+ *   - Checking whether the player is in an active conversation
  *   - Cancelling the chat event so the message is not broadcast
- *   - Creating the InteractionRequest from Minecraft event data
- *   - Sending the "thinking" notification to the player
- *   - Sending the NPC reply to the player
+ *   - Resolving the NPC entity from the world (entity is the runtime's owner)
+ *   - Creating the InteractionRequest and calling ConversationCoordinator
+ *   - Sending "thinking" and reply messages to the player
  *   - Spawning need-driven emotion particles on the NPC
  *
- * All pipeline logic has moved to ConversationCoordinator.
+ * All pipeline logic lives in ConversationCoordinator.
  *
  * Fix for B1: uses ServerChatEvent (server-side) instead of ClientChatEvent.
  * Fix for B2: LLM generates dialogue only; game state is owned by Needs system.
@@ -44,7 +43,7 @@ public class ConversationHandler {
 
     @SubscribeEvent
     public static void onServerChat(ServerChatEvent event) {
-        ServerPlayer player    = event.getPlayer();
+        ServerPlayer player     = event.getPlayer();
         UUID         playerUUID = player.getUUID();
 
         if (!ConversationManager.getInstance().isInConversation(playerUUID)) return;
@@ -55,9 +54,11 @@ public class ConversationHandler {
         Optional<UUID> npcUUID = ConversationManager.getInstance().getConversationNPC(playerUUID);
         if (npcUUID.isEmpty()) return;
 
-        AgentRuntime runtime = AgentRuntimeManager.getInstance().getRuntime(npcUUID.get());
+        // Resolve the NPC entity — it is the authoritative owner of its runtime
+        Entity entity = player.serverLevel().getEntity(npcUUID.get());
+        AINPCEntity npc = entity instanceof AINPCEntity a ? a : null;
 
-        // Build the raw interaction request and hand off to the coordinator
+        // Build the raw interaction request and hand the full pipeline to the coordinator
         InteractionRequest request = new InteractionRequest(
                 InteractionSource.PLAYER_CHAT,
                 playerUUID,
@@ -68,17 +69,17 @@ public class ConversationHandler {
 
         COORDINATOR.handle(
                 request,
-                runtime,
+                npc,
                 player.getServer(),
-                // onThinking — called synchronously before the AI thread starts
+                // onThinking — synchronous, before the AI thread starts
                 npcName -> player.sendSystemMessage(
                         Component.literal("§7[" + npcName + " is thinking...]§r")),
-                // onComplete — called on server thread after AI replies
+                // onComplete — back on server thread after AI replies
                 result -> {
                     player.sendSystemMessage(
                             Component.literal("§e[" + result.npcName + "]§r " + result.reply));
-                    if (runtime != null) {
-                        spawnNeedsParticles(runtime, player, npcUUID.get());
+                    if (npc != null) {
+                        spawnNeedsParticles(npc.getAgentRuntime(), player, npcUUID.get());
                     }
                 }
         );
@@ -87,6 +88,7 @@ public class ConversationHandler {
     // ── Need-driven Particle Emotions (Minecraft-specific, stays here) ─
 
     private static void spawnNeedsParticles(AgentRuntime runtime, ServerPlayer player, UUID npcUUID) {
+        if (runtime == null) return;
         Entity npcEntity = player.serverLevel().getEntity(npcUUID);
         if (!(npcEntity instanceof AINPCEntity npc)) return;
         if (!(npc.level() instanceof ServerLevel serverLevel)) return;

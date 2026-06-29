@@ -23,18 +23,31 @@ import net.minecraft.world.phys.AABB;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * The Minecraft entity representing an AI NPC.
+ *
+ * Runtime ownership:
+ *   Each AINPCEntity permanently owns exactly one AgentRuntime — its brain.
+ *   The runtime is created once in onAddedToWorld() (where the entity UUID is
+ *   guaranteed stable) and is never nulled out or recreated. Removing the entity
+ *   from the world does not destroy the runtime; re-adding it (chunk unload/reload,
+ *   dimension change) reuses the same runtime via the null-guard.
+ *   AgentRuntimeManager is still notified on add/remove for backward compatibility.
+ */
 public class AINPCEntity extends PathfinderMob {
 
     private static final double DEFAULT_SCAN_RANGE = 16.0;
 
+    /** The NPC's brain. Created once; never null after onAddedToWorld(). */
     private AgentRuntime agentRuntime;
-    private ActionExecutor actionExecutor;
-    private int scanCooldown = 0;
+    private final ActionExecutor actionExecutor = new ActionExecutor();
+    private int scanCooldown    = 0;
     private int nameUpdateCooldown = 0;
 
     public AINPCEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
-        this.actionExecutor = new ActionExecutor();
+        // Runtime is NOT created here — the entity UUID may still be overwritten
+        // by NBT load after construction. Create it in onAddedToWorld() instead.
     }
 
     // ── Attributes ─────────────────────────────────────────────────
@@ -51,13 +64,9 @@ public class AINPCEntity extends PathfinderMob {
 
     @Override
     protected void registerGoals() {
-        // Priority 0 — look around when nothing else is happening
         this.goalSelector.addGoal(0, new RandomLookAroundGoal(this));
-        // Priority 1 — main AI-driven behavior (movement + look)
         this.goalSelector.addGoal(1, new GoalDrivenGoal(this, actionExecutor));
-        // Priority 2 — vanilla wander as fallback when queue is empty
         this.goalSelector.addGoal(2, new RandomStrollGoal(this, 0.8D));
-        // Priority 3 — face nearby players when wandering
         this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 8.0F));
     }
 
@@ -66,11 +75,20 @@ public class AINPCEntity extends PathfinderMob {
     @Override
     public void onAddedToWorld() {
         super.onAddedToWorld();
-        this.agentRuntime = AgentRuntimeManager.getInstance().register(this.getUUID());
 
-        // Set display name from generated character profile (server-side)
-        if (!this.level().isClientSide() && this.agentRuntime != null) {
-            String name = this.agentRuntime.getCharacterProfile().getName();
+        // Create the runtime exactly once. If the entity is removed and re-added
+        // (chunk reload, dimension travel), the existing runtime is reused.
+        if (agentRuntime == null) {
+            agentRuntime = new AgentRuntime(this.getUUID());
+        }
+
+        // Also register with AgentRuntimeManager for backward compatibility
+        // (other systems that still do UUID-based lookup).
+        AgentRuntimeManager.getInstance().register(this.getUUID());
+
+        // Set display name from generated character profile (server-side only)
+        if (!this.level().isClientSide()) {
+            String name = agentRuntime.getCharacterProfile().getName();
             this.setCustomName(Component.literal(name));
             this.setCustomNameVisible(true);
         }
@@ -79,10 +97,9 @@ public class AINPCEntity extends PathfinderMob {
     @Override
     public void onRemovedFromWorld() {
         super.onRemovedFromWorld();
-        if (this.agentRuntime != null) {
-            AgentRuntimeManager.getInstance().unregister(this.getUUID());
-            this.agentRuntime = null;
-        }
+        // Do NOT null agentRuntime — the entity permanently owns it.
+        // Unregister from the manager so UUID lookups no longer resolve here.
+        AgentRuntimeManager.getInstance().unregister(this.getUUID());
     }
 
     // ── Tick ───────────────────────────────────────────────────────
@@ -91,27 +108,24 @@ public class AINPCEntity extends PathfinderMob {
     public void tick() {
         super.tick();
 
-        // Ensure runtime is registered (defensive)
-        if (this.agentRuntime == null) {
-            this.agentRuntime = AgentRuntimeManager.getInstance().register(this.getUUID());
+        // agentRuntime is guaranteed non-null after onAddedToWorld().
+        // No defensive re-creation needed here.
+        if (agentRuntime == null || this.level().isClientSide()) return;
+
+        // Scan surroundings every N ticks
+        int scanInterval = Config.scanIntervalTicks > 0 ? Config.scanIntervalTicks : 60;
+        if (--scanCooldown <= 0) {
+            scanCooldown = scanInterval;
+            scanSurroundings();
         }
 
-        if (!this.level().isClientSide()) {
-            // Scan surroundings every N ticks
-            int scanInterval = Config.scanIntervalTicks > 0 ? Config.scanIntervalTicks : 60;
-            if (--scanCooldown <= 0) {
-                scanCooldown = scanInterval;
-                scanSurroundings();
-            }
+        // Execute the perception → event → decision → plan pipeline
+        AgentTickResult result = agentRuntime.tick();
 
-            // Execute the perception → event → decision → plan pipeline
-            AgentTickResult result = this.agentRuntime.tick();
-
-            // Optionally update nametag with current goal (debug mode)
-            if (--nameUpdateCooldown <= 0) {
-                nameUpdateCooldown = 100; // ~5 seconds
-                updateNameTag();
-            }
+        // Optionally update nametag with current goal (debug mode)
+        if (--nameUpdateCooldown <= 0) {
+            nameUpdateCooldown = 100;
+            updateNameTag();
         }
     }
 
@@ -124,32 +138,30 @@ public class AINPCEntity extends PathfinderMob {
         double range = Config.scanRange > 0 ? Config.scanRange : DEFAULT_SCAN_RANGE;
         AABB searchBox = this.getBoundingBox().inflate(range);
 
-        // Detect nearby players
         List<Player> players = level.getEntitiesOfClass(Player.class, searchBox,
                 p -> p != null && p.isAlive() && !p.isSpectator());
 
         for (Player player : players) {
-            Observation observation = new Observation(
+            agentRuntime.getPerceptionBuffer().add(new Observation(
                     System.currentTimeMillis(),
                     ObservationType.PLAYER_SEEN,
                     this.getUUID(),
                     player.getUUID(),
                     new Observation.Position(player.getX(), player.getY(), player.getZ()),
                     Map.of("name", player.getName().getString())
-            );
-            this.agentRuntime.getPerceptionBuffer().add(observation);
+            ));
         }
     }
 
     // ── Nametag ────────────────────────────────────────────────────
 
     private void updateNameTag() {
-        if (this.agentRuntime == null) return;
+        if (agentRuntime == null) return;
 
-        String baseName = this.agentRuntime.getCharacterProfile().getName();
+        String baseName = agentRuntime.getCharacterProfile().getName();
 
         if (Config.showDebugGoals) {
-            Goal goal = this.agentRuntime.getCurrentGoal();
+            Goal goal = agentRuntime.getCurrentGoal();
             String goalLabel = goal != null ? " §7[" + goal.getType().name() + "]§r" : "";
             this.setCustomName(Component.literal(baseName + goalLabel));
         } else {
@@ -157,17 +169,17 @@ public class AINPCEntity extends PathfinderMob {
         }
     }
 
-    // ── Public Helpers ─────────────────────────────────────────────
+    // ── Public API ─────────────────────────────────────────────────
 
-    /** Returns the NPC's generated character name. */
+    /** The NPC's generated character name. */
     public String getCharacterName() {
-        if (agentRuntime != null) {
-            return agentRuntime.getCharacterProfile().getName();
-        }
-        return "NPC";
+        return agentRuntime != null ? agentRuntime.getCharacterProfile().getName() : "NPC";
     }
 
-    /** Returns the NPC's agent runtime (server-side only). */
+    /**
+     * The NPC's agent runtime — its brain.
+     * Non-null after onAddedToWorld(). Server-side only.
+     */
     public AgentRuntime getAgentRuntime() {
         return agentRuntime;
     }
