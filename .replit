@@ -22,9 +22,9 @@ args = "Build Mod"
 name = "Build Mod"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "./gradlew build"
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "./gradlew build --no-daemon 2>&1"
